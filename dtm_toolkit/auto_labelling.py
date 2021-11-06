@@ -1,3 +1,24 @@
+"""
+Author: Thomas Scelsi
+Email: tscelsi@student.unimelb.edu.au
+
+This file contains the logic for the automatic topic labelling of Latent Dirichlet Allocation(LDA)-style
+topic models by mapping the top-n most probable terms in a topic to a list of pre-defined thesaurus labels.
+We outline the methodology for the automatic labelling strategies in "".
+
+The general usage for this file should be to:
+
+1. Instantiate the class with a thesaurus, mapping phrases to overarching themes
+2. Pass topics to the get_topic_labels function to derive automatic labels.
+
+In code:
+
+autolabel = AutoLabel(thesaurus)
+labels = autolabel.get_topic_labels(LDA_topics)
+
+For more information see the doc strings inside the __init__ function and get_topic_labels function of the class.
+"""
+
 from collections import Counter
 from spacy.matcher import PhraseMatcher
 import spacy
