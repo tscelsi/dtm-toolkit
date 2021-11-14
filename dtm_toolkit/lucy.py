@@ -22,6 +22,7 @@ import pandas as pd
 import os
 from collections import Counter
 from spacy.matcher import PhraseMatcher
+import sys
 
 
 NUM_CPU = os.cpu_count() - 1 if os.cpu_count() > 1 else 1
@@ -67,6 +68,7 @@ class Lucy:
         }
 
         """
+        print("loading matcher...")
         self.matcher = PhraseMatcher(self.nlp.vocab, attr="LEMMA")
         if matcher_keywords:
             assert type(matcher_keywords) == dict
@@ -75,6 +77,7 @@ class Lucy:
         else:
             for et, keywords in self.energy_clusters.items():
                 self.matcher.add(et, self.nlp.pipe(keywords, n_process=NUM_CPU))
+        print("loaded matcher...")
 
     def _sort_energy_clusters(self, reverse):
         for et in self.energy_clusters:
@@ -270,7 +273,7 @@ class Lucy:
         return count_df
 
 
-def run_measuring_space(df, para_col_name, matcher_keywords, save_path, save_col_prefix="lucy_"):
+def run_measuring_space(df, para_col_name, matcher_keywords, save_path=None, save=True, save_col_prefix="lucy_"):
     """ This function is responsible for initialising the Lucy class to run the 
         core logic identified in the "Measuring Space" section of the Lucy et. al (2020) paper: 
         'Content Analysis of Textbooks via Natural Language Processing: Findings on Gender, Race, 
@@ -320,4 +323,9 @@ def run_measuring_space(df, para_col_name, matcher_keywords, save_path, save_col
     ## neuralcoref bugged so disabled ##
     # coref_df = l.build_coref_df(df)
     lucy_df = l.run_measuring_space(df, para_col_name, matcher_keywords, save_col_prefix)
-    lucy_df.to_csv(save_path)
+    if save and not save_path:
+        print("need to provide save path")
+        sys.exit(1)
+    elif save:
+        lucy_df.to_csv(save_path)
+    return lucy_df
