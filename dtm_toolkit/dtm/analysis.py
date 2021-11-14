@@ -388,6 +388,27 @@ class DTMAnalysis:
             print(f"{year}\t{top_words}")
             print("-----")
     
+    def plot_words_ot_from_topic(self, topic_idx, words, title, save_path=None, plot=True):
+        try:
+            word_indexes = []
+            for word in words:
+                ind = self.vocab.index(word)
+                assert self.vocab[ind] == word
+                word_indexes.append(ind)
+        except:
+            print("word not in vocab")
+            sys.exit(1)
+        topic_word_distribution = self.get_topic_representation_ot(topic_idx)
+        word_ot = topic_word_distribution[:, word_indexes]
+        plot_df = pd.DataFrame(word_ot, columns=words)
+        plot_df['year'] = self.years
+        plot_df = plot_df.set_index('year')
+        if plot:
+            plt = plot_word_ot(plot_df, title, save_path=save_path)
+            return plot_df, plt
+        else:
+            return plot_df
+    
     ### NEEDS WORK, OR MAYBE REMOVE COMPLETELY ###
     
     def _get_sorted_columns(self, df, sort_by="peak_pos"):
@@ -417,26 +438,6 @@ class DTMAnalysis:
         plt = time_evolution_plot(df_scores, save_path, scale=scale, save=save)
         return plt
 
-    def plot_words_ot_from_topic(self, topic_idx, words, title, save_path=None, plot=True):
-        try:
-            word_indexes = []
-            for word in words:
-                ind = self.vocab.index(word)
-                assert self.vocab[ind] == word
-                word_indexes.append(ind)
-        except:
-            print("word not in vocab")
-            sys.exit(1)
-        topic_word_distribution = self.get_topic_representation_ot(topic_idx)
-        word_ot = topic_word_distribution[:, word_indexes]
-        plot_df = pd.DataFrame(word_ot, columns=words)
-        plot_df['year'] = self.years
-        plot_df = plot_df.set_index('year')
-        if plot:
-            plt = plot_word_ot(plot_df, title, save_path=save_path)
-            return plot_df, plt
-        else:
-            return plot_df
     
     def plot_labels_ot_from_topic(self, topic_idx, labels, title, save_path=None, plot=True, n=10):
         plot_df = pd.DataFrame(columns=["year", "label", "value"])
