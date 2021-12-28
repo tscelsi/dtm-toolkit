@@ -15,10 +15,8 @@ import re
 import json
 from dtm_toolkit.auto_labelling import AutoLabel
 
-EUROVOC_PATH = os.path.join(os.environ['ROADMAP_SCRAPER'], "eurovoc_export_en.csv")
-EUROVOC_LABEL_LOGODDS_PATH = os.path.join(os.environ['ROADMAP_SCRAPER'], "eurovoc_label_logodds.txt")
-EUROVOC_ALL_EMBEDDINGS_DIR = os.path.join(os.environ['ROADMAP_SCRAPER'], "eurovoc_embeddings")
-WHITELIST_EUROVOC_LABELS_PATH = os.path.join(os.environ['ROADMAP_SCRAPER'], "DTM", "dtm", "eurovoc_labels_merged.txt")
+EUROVOC_PATH = os.path.join(os.path.dirname(__file__), "eurovoc_export_en.csv")
+WHITELIST_EUROVOC_LABELS_PATH = os.path.join(os.path.dirname(__file__), "eurovoc_labels_merged.txt")
 
 class Eurovoc:
 
