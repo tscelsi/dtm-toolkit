@@ -15,6 +15,7 @@ import numpy as np
 import re
 import csv
 import json
+from typing import Union
 import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 import gensim
@@ -29,9 +30,6 @@ from spacy.tokens import Doc
 import spacy
 from .eurovoc import Eurovoc
 from ..auto_labelling import AutoLabel
-
-WHITELIST_EUROVOC_LABELS_PATH = os.path.join(os.environ['DTM_ROOT'], "dtm", "eurovoc_labels_merged.txt")
-EUROVOC_PATH = os.path.join(os.environ['DTM_ROOT'], "dtm", "eurovoc_export_en.csv")
 
 class DTMAnalysis:
     
@@ -70,7 +68,7 @@ class DTMAnalysis:
         self.nlp = spacy.load(spacy_lang)
         self.ndocs = ndocs
         self.ntopics = ntopics
-        if thesaurus:
+        if not isinstance(thesaurus, type(None)):
             self.thesaurus = thesaurus
         else:
             # defaults to Eurovoc as per original paper
@@ -119,13 +117,15 @@ class DTMAnalysis:
         # check to see that we have the same counts of yearly docs as the seq-dat file
         assert self.docs_per_year == self.doc_topic_gammas.groupby('year').count()['topic_dist'].tolist()
 
-    def save_gammas(self, save_path, split=True):
-        doc_ids = pd.read_csv(os.path.join(self.model_root, "doc_ids.csv"))
+    def save_gammas(self, doc_ids: Union[list, pd.Series], save_path, split=True):
+        if isinstance(doc_ids, str):
+            doc_ids = pd.read_csv(doc_ids)
+        # else doc_ids already a series or list.
         assert len(doc_ids) == len(self.doc_topic_gammas)
         if split:
             tmp_df = pd.DataFrame(self.doc_topic_gammas['topic_dist'].tolist(), columns=[i for i in range(self.ntopics)])
             tmp_df['year'] = self.doc_topic_gammas['year']
-            tmp_df['doc_id'] = doc_ids['doc_id']
+            tmp_df['doc_id'] = doc_ids
             tmp_df.to_csv(save_path)
             del tmp_df
         else:
@@ -298,14 +298,14 @@ class DTMAnalysis:
             if merge_topics:
                 merged_topics = Counter()
                 for topic_idx, topic in enumerate(topic_props):
-                    curr_topic_name = re.search(r"^\d{4} (.*)$", topic_labels[topic_idx][0][0]).group(1)
+                    curr_topic_name = re.search(r"^\d{2,4} (.*)$", topic_labels[topic_idx][0][0]).group(1)
                     merged_topics.update({curr_topic_name : topic})
                 for topic_idx, [topic_name, proportion] in enumerate(merged_topics.items()):
                     for_df.append([year, topic_idx, proportion, topic_name])
             else:
                 for topic_idx, topic in enumerate(topic_props):
                     if include_names:
-                        curr_topic_name = re.search(r"^\d{4} (.*)$", topic_labels[topic_idx][0][0]).group(1)
+                        curr_topic_name = re.search(r"^\d{2,4} (.*)$", topic_labels[topic_idx][0][0]).group(1)
                         for_df.append([year, topic_idx, topic, curr_topic_name + "(" + str(topic_idx) + ")"])
                     else:
                         for_df.append([year, topic_idx, topic, str(topic_idx)])
@@ -413,8 +413,13 @@ class DTMAnalysis:
     
     def _get_sorted_columns(self, df, sort_by="peak_pos"):
         # sort according to position of peak
+        # sort_by can be func that takes column iterable and returns sorted indices
         sel2 = df.copy()
-        if sort_by == 'peak_pos':
+        import types
+        if isinstance(sort_by, types.FunctionType):
+            columns = df.columns[sort_by(df.columns)]
+            return columns
+        elif sort_by == 'peak_pos':
             sel2.loc['peak_pos'] = [sel2[topic].idxmax() for topic in sel2.columns]
             sel2 = sel2.sort_values(by='peak_pos', axis=1)
             sel2 = sel2.drop('peak_pos')
@@ -426,8 +431,8 @@ class DTMAnalysis:
         return pd.Index([str(y) for y in columns])
     
 
-    def plot_topics_ot(self, save_path, save=True, sort_by="peak_pos", keep=None, include_names=False, scale=0.75, merge_topics=False):
-        df_scores = self.create_plottable_topic_proportion_ot_df(include_names=include_names, merge_topics=merge_topics)
+    def plot_topics_ot(self, save_path, save=True, sort_by="peak_pos", keep=None, include_names=False, scale=0.75, merge_topics=False, fontsize='x-large', **kwargs):
+        df_scores = self.create_plottable_topic_proportion_ot_df(include_names=include_names, merge_topics=merge_topics, **kwargs)
         for i in df_scores.index:
             df_scores.loc[i] = df_scores.loc[i] / df_scores.loc[i].sum() * 100
         sorted_selection = self._get_sorted_columns(df_scores, sort_by)
@@ -435,7 +440,7 @@ class DTMAnalysis:
             df_scores = df_scores[sorted_selection].loc[:,[str(x) for x in keep]]
         else:
             df_scores = df_scores[sorted_selection]
-        plt = time_evolution_plot(df_scores, save_path, scale=scale, save=save)
+        plt = time_evolution_plot(df_scores, save_path, scale=scale, save=save, fontsize=fontsize)
         return plt
 
     

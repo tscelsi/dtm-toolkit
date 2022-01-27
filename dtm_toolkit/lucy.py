@@ -17,11 +17,13 @@ We want to be able to perform these tasks and analyse the results:
 """
 
 import spacy
+from typing import Optional
 # import neuralcoref
 import pandas as pd
 import os
 from collections import Counter
 from spacy.matcher import PhraseMatcher
+from spacy.language import Language
 import sys
 
 
@@ -36,6 +38,7 @@ def remove_duplicate_matches(matches):
     """
     prev_match = None
     reduced_matches = []
+    matches = sorted(matches, key=lambda x: (x[0], x[1], x[2]))
     for match in matches:
         if not prev_match:
             reduced_matches.append(match)
@@ -46,6 +49,13 @@ def remove_duplicate_matches(matches):
             reduced_matches.append(match)
         elif match[1] > prev_match[2]:
             reduced_matches.append(match)
+        elif match[1] == prev_match[1]:
+            # handles case where string like:
+            # 'carbon capture and storage' matches both
+            # 'carbon capture' and 'carbon capture and storage'.
+            # should only match 'carbon capture and storage'
+            reduced_matches.pop()
+            reduced_matches.append(match)
         elif (match[1] < prev_match[2]) and (match[2] > prev_match[2]):
             reduced_matches.append(match)
         prev_match = match
@@ -53,8 +63,9 @@ def remove_duplicate_matches(matches):
 
 
 class Lucy:
-    def __init__(self):
-        self.nlp = spacy.load("en_core_web_sm", disable=['ner','tok2vec'])
+    def __init__(self, matcher: Optional[PhraseMatcher]=None, nlp: Optional[Language]=None):
+        self.nlp = nlp if nlp else spacy.load("en_core_web_sm", disable=['ner','tok2vec'])
+        self.matcher = matcher
 
     def _load_matcher(self, matcher_keywords):
         """
@@ -69,6 +80,9 @@ class Lucy:
 
         """
         print("loading matcher...")
+        if isinstance(self.matcher, PhraseMatcher):
+            print("matcher already loaded.")
+            return
         self.matcher = PhraseMatcher(self.nlp.vocab, attr="LEMMA")
         if matcher_keywords:
             assert type(matcher_keywords) == dict
@@ -176,7 +190,7 @@ class Lucy:
             prev_match = match
         return reduced_matches
 
-    def _count_energy_occurrences(self, id_, input_para, preprocess=True):
+    def _count_occurrences(self, id_, input_para):
         """
         Builds off the strategies found in the 'Measuring Space' section of Lucy et. al (2020)
         This function counts the prevalence of energy technology keywords in a paragraph of text.
@@ -184,26 +198,23 @@ class Lucy:
         Args:
             id_ (int): an arbitrary id for printing purposes, usually corresponds to row number in dataframe
             input_para (str): This is the paragraph to count energy occurrences in
-            preprocess (boolean): If true, the input_para will be preprocessed, else preprocessing is skipped.
 
         Returns:
-            energy_counts (dict): This is the high level frequency counts for each energy technology
-            energy_terms (dict): This is the lower level count of individual energy keywords
-            preproc_para (str|None): If preprocessing is true, then this function returns the preprocessed paragraph as well
+            counts (dict): This is the high level frequency counts for each theme
+            terms (dict): This is the lower level count of individual keyword for a theme
         """
         print(f"row {id_}")
-        preproc_para = None
-        energy_counts = Counter()
-        energy_terms = Counter()
+        counts = Counter()
+        terms = Counter()
         if input_para:
             matches = self.matcher(input_para)
             matches = remove_duplicate_matches(matches)
             for match_id, start, end in matches:
                 et = self.nlp.vocab.strings[match_id]
                 term = input_para[start:end].text.lower()
-                energy_counts[et] += 1
-                energy_terms[term] += 1
-        return energy_counts, energy_terms, preproc_para
+                counts[et] += 1
+                terms[term] += 1
+        return counts, terms
     
     def _preprocess_spacy(self, text):
         lemma_doc = ""
@@ -215,27 +226,8 @@ class Lucy:
                 lemma_doc = lemma_doc + tok.whitespace_
             lemma_doc = lemma_doc + tok.lemma_ + tok.whitespace_
         return lemma_doc
-
-    def get_energy_count_by_x(self, df, groupby="doc_category", column="coref_energy_counts"):
-        """
-        Contains strategies found in the 'Measuring Space' section of Lucy et. al (2020)
-        This function counts the frequency of energy technologies in paragraphs by a specified groupby clause either with coreference resolved
-        paragraphs, or raw paragraphs. By default groupby is on publication.
-
-        Each paragraph count needs to be in the form as created by:  _count_energy_occurrences
-        In theory, can be used for any Counter based 
-        i.e. {"coal": 4, "bio": 3, "oil": 2, ...}
-
-        Args:
-            df (pd.DataFrame): dataframe containing energy counts in each paragraph
-            column (str): the count column to use either "raw_energy_counts" or "coref_energy_counts"
-
-        Returns:
-            df (pd.DataFrame): dataframe containing enriched rows with counts of each energy technology
-        """
-        return df.groupby(groupby)[column].aggregate(lambda x: sum(x, Counter()))
     
-    def run_measuring_space(self, df, para_col_name, matcher_keywords=None, save_col_prefix="lucy"):
+    def run_measuring_space(self, df, para_col_name, matcher_keywords=None, save_col_prefix="lucy_"):
         """
         This function is responsible for running the core logic identified in the "Measuring Space"
         section of the Lucy et. al (2020) paper. We identify how much 'space' (frequency counts) is allocated
@@ -255,21 +247,19 @@ class Lucy:
                 paragraph text to the dataframe under the "preproc_para" column.
         """
 
-        counts = []
-        terms = []
-        preproc_paras = []
+        total_counts = []
+        total_terms = []
         count_df = df.copy()
         self._load_matcher(matcher_keywords)
         # ensure no nonetype terms
         df[para_col_name] = df[para_col_name].fillna(value="")
         for i, doc in enumerate(self.nlp.pipe(df[para_col_name], n_process=11, batch_size=256)):
             # print(i)
-            e_counts, e_terms, preproc_para = self._count_energy_occurrences(i, doc)
-            counts.append(e_counts)
-            terms.append(e_terms)
-            preproc_paras.append(preproc_para)
-        count_df[save_col_prefix + "counts"] = counts
-        count_df[save_col_prefix + "terms"] = terms
+            counts, terms = self._count_occurrences(i, doc)
+            total_counts.append(counts)
+            total_terms.append(terms)
+        count_df[save_col_prefix + "counts"] = total_counts
+        count_df[save_col_prefix + "terms"] = total_terms
         return count_df
 
 

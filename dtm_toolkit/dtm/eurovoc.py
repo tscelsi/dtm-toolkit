@@ -37,18 +37,20 @@ class Eurovoc:
         "2026 consumption": "2016 business operations and trade",
     }
 
-    def __init__(self, eurovoc_path=None, eurovoc_whitelist=False, whitelist_eurovoc_labels=None):
+    def __init__(self, eurovoc_path=None, eurovoc_whitelist=False, whitelist_eurovoc_labels=None, remap=True):
         self.nlp = spacy.load("en_core_web_sm")
         print("Initialising EuroVoc...")
         def preproc(label):
             lowered_label = label.lower()
-            if lowered_label in self.eurovoc_label_remapping:
-                lowered_label = self.eurovoc_label_remapping[lowered_label]
+            if remap:
+                if lowered_label in self.eurovoc_label_remapping:
+                    lowered_label = self.eurovoc_label_remapping[lowered_label]
             if lowered_label in self.eurovoc_label_correction_map:
                 lowered_label = self.eurovoc_label_correction_map[lowered_label]
             return lowered_label
         self.eurovoc = pd.read_csv(EUROVOC_PATH) if not isinstance(eurovoc_path, str) else pd.read_csv(eurovoc_path)
         self.eurovoc['MT'] = self.eurovoc['MT'].apply(preproc)
+        self.eurovoc['domain'] = self.eurovoc['domain'].apply(preproc)
         if eurovoc_whitelist:
             self.whitelist_eurovoc_labels = whitelist_eurovoc_labels if whitelist_eurovoc_labels != None else [x.strip().lower() for x in open(WHITELIST_EUROVOC_LABELS_PATH, "r").readlines()]
             m = self.eurovoc.apply(lambda x: x.MT.lower() in self.whitelist_eurovoc_labels, axis=1)

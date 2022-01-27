@@ -54,7 +54,7 @@ class Preprocessing:
             ngrammed_doc.append(split_sent)
         return ngrammed_doc
 
-    def _add_ngrams(self):
+    def add_ngrams(self):
         """
         ['here', 'is', 'new', 'south', 'wales']
         match with ngram 'new south wales'
@@ -149,7 +149,7 @@ class Preprocessing:
         if ngrams:
             if self.verbose:
                 print("adding ngrams...")
-            self.matches = self._add_ngrams()
+            self.matches = self.add_ngrams()
             # self._add_bigrams(ngrams=ngrams)
         new_paras = []
         if self.verbose:

@@ -6,13 +6,16 @@ import pandas as pd
 import os
 import spacy
 import re
+from typing import List, Optional, Iterable, Union
 from numpy import random
 from collections import defaultdict, Counter
 import json
 from multiprocessing import Pool
-from preprocessing import Preprocessing
+from dtm_toolkit.preprocessing import Preprocessing
 from pprint import pprint
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 
 SEED = 42
 
@@ -27,6 +30,7 @@ class DTMCreator:
         text_col_name='section_txt', 
         date_col_name='date',
         doc_id_col_name='doc_id',
+        already_preprocessed=False,
         bigram=True, 
         limit=None, 
         years_per_step=1,
@@ -38,7 +42,10 @@ class DTMCreator:
             # this is assumed to be path to df
             if docs.endswith(".tsv"):
                 self.df = pd.read_csv(docs, sep="\t")
+            elif docs.endswith(".pickle"):
+                self.df = pd.read_pickle(docs)
             else:
+                # default
                 self.df = pd.read_csv(docs)
             self.doc_id_col_name = doc_id_col_name
             self.text_col_name = text_col_name
@@ -51,6 +58,7 @@ class DTMCreator:
         self.df['year'] = self.years
         self.bigram = bigram
         self.years_per_step = years_per_step
+        self.already_preprocessed = already_preprocessed
         # create directory structure
         if not os.path.isdir(model_root) and model_root != "":
             os.mkdir(model_root)
@@ -157,33 +165,43 @@ class DTMCreator:
         wids = {}
         wids_rev = {}
         self.wcounts = defaultdict(lambda:0)
-        p = Preprocessing(self.rdocs, term_blacklist=self.term_blacklist)
-        self.paras_processed = p.preprocess(ngrams=ngrams)
-        self.df['preproc_para'] = self.paras_processed
-        # self.preproc_df['preproc_para'] = self.paras_processed
-        if save_preproc:
-            # saves the preprocessed corpus before any filtering on paragraphs is done.
-            df = self.df.copy()
-            df.to_csv(os.path.join(self.model_root, "preproc_df.csv"))
-            del df
-        if basic:
-            return self.paras_processed
-        
+        if not self.already_preprocessed:
+            p = Preprocessing(self.rdocs, term_blacklist=self.term_blacklist)
+            self.paras_processed = p.preprocess(ngrams=ngrams)
+            formatted_docs = []
+            for d in self.paras_processed:
+                new_doc = []
+                for s in self.paras_processed:
+                    new_doc.extend(s)
+                formatted_docs.append(new_doc)
+            self.paras_processed = formatted_docs
+            self.df['preproc_para'] = self.paras_processed
+            # self.preproc_df['preproc_para'] = self.paras_processed
+            if save_preproc:
+                # saves the preprocessed corpus before any filtering on paragraphs is done.
+                df = self.df.copy()
+                df.to_csv(os.path.join(self.model_root, "preproc_df.csv"))
+                del df
+            if basic:
+                return self.paras_processed
+        else:
+            self.paras_processed = self.df[self.text_col_name]
+            if isinstance(self.paras_processed.iloc[0], str):
+                self.paras_processed = [x.split(" ") for x in self.paras_processed]
+        assert isinstance(self.paras_processed, list)
         # count words
-        for d in self.df['preproc_para']:
-            for s in d:
-                for w in s:
-                    self.wcounts[w]+=1           
+        for d in self.paras_processed:
+            for w in d:
+                self.wcounts[w]+=1           
         # PREPROCESS: keep tokens that occur at least min_freq times
         self.wcounts = {k:v for k,v in self.wcounts.items() if v>min_freq} 
 
         # collect word IDs
-        for d in self.df['preproc_para']:
-            for s in d:
-                for w in s:
-                    if w in self.wcounts and w not in wids:
-                        wids_rev[len(wids)]=w
-                        wids[w]=len(wids)
+        for d in self.paras_processed:
+            for w in d:
+                if w in self.wcounts and w not in wids:
+                    wids_rev[len(wids)]=w
+                    wids[w]=len(wids)
         if write_vocab:
             with open(os.path.join(self.model_root, "vocab.txt"), 'w+') as of:
                 for i in range(len(wids_rev)):
@@ -193,13 +211,12 @@ class DTMCreator:
         # transform to DTM input
         self.paras_to_wordcounts = []
         self.years_final = []
-
         # if we need to merge years, then it is done through the years_per_step var
         if self.years_per_step != 1:
             self.year_mapping = self._get_year_batches()
         final_df_mask = []
-        for idx, doc in enumerate(self.df['preproc_para']):
-            token = [w for s in doc for w in s if w in self.wcounts]
+        for idx, doc in enumerate(self.paras_processed):
+            token = [w for w in doc if w in self.wcounts]
             type_counts = Counter(token)
             # PREPROCESS: at least 15 token and >5 types per document
             if len(token)>15 and len(type_counts)>5:
@@ -214,7 +231,8 @@ class DTMCreator:
                 final_df_mask.append(False)
         self.df = self.df[final_df_mask]
 
-    def write_dtm(self, min_year=None, max_year=None, write_csv=False):
+
+    def write_dtm(self, min_year=None, max_year=None, year_iterator: Optional[Iterable[Union[str, int]]]=None, write_csv=False):
         """Write the mult.dat and seq.dat and year.dat files needed to fit the DTM
 
         Args:
@@ -239,8 +257,8 @@ class DTMCreator:
         else:
             min_date = min(self.year_mapping.values())
             max_date = max(self.year_mapping.values())
-
-        for year in range(min_date, max_date + 1, 1):
+        iterator = year_iterator if year_iterator else range(min_date, max_date + 1, 1)
+        for year in iterator:
             for idx, yy in enumerate(self.years_final):
                 if year ==yy:
                     yearcount[year]+=1
@@ -254,7 +272,7 @@ class DTMCreator:
             outseq.write(f"{yearcount[year]}\n")
             year_dict[len(year_dict)]=year
         self.df = self.df.iloc[ordered_doc_ids]
-        self.df[self.doc_id_col_name].to_csv(os.path.join(self.model_root, "doc_ids.csv"), index=False)
+        self.df.to_pickle(os.path.join(self.model_root, "ordered_dtm.pickle"))
         if write_csv:
             self.df.to_csv(os.path.join(self.model_root, "preproc_corpus.csv"), index=False)
 
@@ -276,7 +294,7 @@ def fit(run, model_root_dir, outpath):
     return 1
 
 def fit_mult_model(model_root_dir):
-    with open("runs.json", "r") as fp:
+    with open(os.path.join(os.environ['DTM_ROOT'], "runs.json"), "r") as fp:
         data = json.load(fp)
     with Pool(processes=12) as pool:
         multiple_results = [pool.apply_async(fit, (run, model_root_dir, os.path.join(model_root_dir, f"k{run['topics']}_a{run['alpha']}_var{run['topic_var']}"))) for run in data]

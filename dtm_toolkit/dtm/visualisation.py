@@ -59,7 +59,7 @@ def heatmap(X, save_path=None, **kwargs):
     g = sns.heatmap(data=X, center=0, cmap=palette, **kwargs)
     if save_path:
         print("saving heatmap...")
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
     # else:
     #     print("showing heatmap...")
     #     plt.show()
@@ -76,7 +76,7 @@ def single_topic_time_evolution(df, ax):
 #     max_val = 1 * df.max() + 5
     ax.fill_between(x_labels, df, -1*df, label="sup")
 
-def time_evolution_plot(df, filename, title=None, scale=1, save=True, use_colour_mapping=False):
+def time_evolution_plot(df, filename, title=None, scale=1, save=True, use_colour_mapping=False, fontsize='x-large'):
     """This function plots topic proportions over time. This function was adapted
     and is credited to the Muller-Hansen paper, the original code can be found in the
     following repository: https://github.com/mcc-apsis/coal-discourse.
@@ -125,14 +125,14 @@ def time_evolution_plot(df, filename, title=None, scale=1, save=True, use_colour
                 'figure.facecolor':'w'}, 
         context="paper"
     )
-    fig = plt.figure(figsize=(30, 1.7 * len(df.columns)))
+    fig = plt.figure(figsize=(30, 2 * len(df.columns)))
     ax = fig.gca()
 
     plt.yticks([])
     x_domain = [x for x in range(1,len(df)+1)]
     x_labels = df.index.tolist()
     assert len(x_domain) == len(x_labels)
-    plt.xticks(x_domain, fontsize='x-large')
+    plt.xticks(x_domain, fontsize=fontsize)
     ax.set_xticklabels(x_labels)
     max_val = scale * df.max().max() + 5
 
@@ -148,9 +148,9 @@ def time_evolution_plot(df, filename, title=None, scale=1, save=True, use_colour
             plt.fill_between(x_domain, df[t] + i*max_val, i*max_val - df[t], label=t, color=colour)
         else:
             plt.fill_between(x_domain, df[t] + i*max_val, i*max_val - df[t], label=t)
-        plt.text(len(df) + 0.3, (i+0.) *max_val, t, fontsize='x-large')
+        plt.text(len(df) + 0.3, (i+0.) *max_val, t, fontsize=fontsize)
 
-    plt.xlabel('Year', fontsize="x-large")
+    plt.xlabel('Year', fontsize=fontsize)
     if title:
         plt.title(title)
     if save:
