@@ -135,7 +135,7 @@ class DTMAnalysis:
     def get_doc_topic_mixtures(self):
         return self.doc_topic_gammas
 
-    def create_plottable_topic_proportion_ot_df(self, remove_small_topics=False, threshold=0.01, merge_topics=False, include_names=False, limit=2020, **kwargs):
+    def create_plottable_topic_proportion_ot_df(self, remove_small_topics=False, threshold=0.01, merge_topics=False, include_names=False, limit=None, **kwargs):
         """[summary]
 
         Args:
@@ -149,7 +149,8 @@ class DTMAnalysis:
             [type]: [description]
         """
         df = self._create_topic_proportions_per_year_df(remove_small_topics, threshold, merge_topics=merge_topics, include_names=include_names, **kwargs)
-        df = df[df['year'] <= limit]
+        if limit:
+            df = df[df['year'] <= limit]
         df = df.pivot(index='year', columns='topic_name', values='proportion')
         return df
     
@@ -255,8 +256,8 @@ class DTMAnalysis:
         else:
             return topw_df
     
-    def _get_single_topic_proportions_ot(self, topic_idx):
-        df = self.create_plottable_topic_proportion_ot_df(include_names=False)
+    def _get_single_topic_proportions_ot(self, topic_idx, **kwargs):
+        df = self.create_plottable_topic_proportion_ot_df(include_names=False, **kwargs)
         max_val = df.max().max()
         df = df.loc[:,str(topic_idx)]
         df = df / df.sum() * 100
