@@ -25,13 +25,11 @@ class DTMCreator:
     
     def __init__(
         self, 
-        model_root, 
-        docs,
-        text_col_name='section_txt', 
-        date_col_name='date',
-        doc_id_col_name='doc_id',
-        already_preprocessed=False,
-        bigram=True, 
+        model_root: str, 
+        docs: str,
+        text_col_name: Optional[str]='section_txt', 
+        date_col_name: Optional[str]='date',
+        doc_id_col_name: Optional[str]='doc_id',
         limit=None, 
         years_per_step=1,
         shuffle=True,
@@ -51,14 +49,11 @@ class DTMCreator:
             self.text_col_name = text_col_name
             self.df = self.df.dropna(subset=[text_col_name])
             self.years = self._extract_dates(date_col_name)
-            self.paragraphs = self.df[text_col_name].tolist()
         else:
             print("Need to pass a path to csv containing corpus information. See examples for more details.")
             sys.exit(1)
         self.df['year'] = self.years
-        self.bigram = bigram
         self.years_per_step = years_per_step
-        self.already_preprocessed = already_preprocessed
         # create directory structure
         if not os.path.isdir(model_root) and model_root != "":
             os.mkdir(model_root)
@@ -70,7 +65,7 @@ class DTMCreator:
         self.nlp.add_pipe('sentencizer')
         self.rdocs =[]
         self.rdates = []
-        rand_indexes = [idx for idx in random.RandomState(SEED).permutation(len(self.paragraphs))] if shuffle else range(len(self.paragraphs))
+        rand_indexes = [idx for idx in random.RandomState(SEED).permutation(len(self.df))] if shuffle else range(len(self.df))
         if limit:
             self.df = self.df.iloc[rand_indexes[:limit]]
         else:
@@ -126,11 +121,11 @@ class DTMCreator:
 
     def preprocess_paras(
             self,
-            min_freq=150, 
+            min_freq=150,
+            min_num_toks_per_doc=15,
+            min_unique_toks_per_doc=5,
+            timestep_mapping={},
             write_vocab=False, 
-            ngrams=True,
-            basic=False,
-            save_preproc=False
         ):
         """This function takes the spaCy documents found in this classes rdocs attribute and preprocesses them.
         The preprocessing pipeline tokenises each document and removes:
@@ -162,40 +157,20 @@ class DTMCreator:
         """
         self.paras_processed = []
         self.doc_index_order = []
+        self.timestep_mapping = timestep_mapping
         wids = {}
         wids_rev = {}
         self.wcounts = defaultdict(lambda:0)
-        if not self.already_preprocessed:
-            p = Preprocessing(self.rdocs, term_blacklist=self.term_blacklist)
-            self.paras_processed = p.preprocess(ngrams=ngrams)
-            formatted_docs = []
-            for d in self.paras_processed:
-                new_doc = []
-                for s in self.paras_processed:
-                    new_doc.extend(s)
-                formatted_docs.append(new_doc)
-            self.paras_processed = formatted_docs
-            self.df['preproc_para'] = self.paras_processed
-            # self.preproc_df['preproc_para'] = self.paras_processed
-            if save_preproc:
-                # saves the preprocessed corpus before any filtering on paragraphs is done.
-                df = self.df.copy()
-                df.to_csv(os.path.join(self.model_root, "preproc_df.csv"))
-                del df
-            if basic:
-                return self.paras_processed
-        else:
-            self.paras_processed = self.df[self.text_col_name]
-            if isinstance(self.paras_processed.iloc[0], str):
-                self.paras_processed = [x.split(" ") for x in self.paras_processed]
+        self.paras_processed = self.df[self.text_col_name]
+        if isinstance(self.paras_processed.iloc[0], str):
+            self.paras_processed = [x.split(" ") for x in self.paras_processed]
         assert isinstance(self.paras_processed, list)
         # count words
         for d in self.paras_processed:
             for w in d:
-                self.wcounts[w]+=1           
+                self.wcounts[w]+=1
         # PREPROCESS: keep tokens that occur at least min_freq times
         self.wcounts = {k:v for k,v in self.wcounts.items() if v>min_freq} 
-
         # collect word IDs
         for d in self.paras_processed:
             for w in d:
@@ -207,26 +182,23 @@ class DTMCreator:
                 for i in range(len(wids_rev)):
                     assert wids[wids_rev[i]]==i
                     of.write(f"{wids_rev[i]}\t{self.wcounts[wids_rev[i]]}\n")
-                        
         # transform to DTM input
         self.paras_to_wordcounts = []
-        self.years_final = []
+        self.timesteps_final = []
         # if we need to merge years, then it is done through the years_per_step var
-        if self.years_per_step != 1:
-            self.year_mapping = self._get_year_batches()
         final_df_mask = []
         for idx, doc in enumerate(self.paras_processed):
             token = [w for w in doc if w in self.wcounts]
             type_counts = Counter(token)
             # PREPROCESS: at least 15 token and >5 types per document
-            if len(token)>15 and len(type_counts)>5:
+            if len(token) > min_num_toks_per_doc and len(type_counts) > min_unique_toks_per_doc:
                 id_counts = [f"{len(type_counts)}"]+[f"{wids[k]}:{v}" for k,v in type_counts.most_common()]
                 self.paras_to_wordcounts.append(' '.join(id_counts))
                 final_df_mask.append(True)
-                if self.years_per_step != 1:
-                    self.years_final.append(self.year_mapping[self.df['year'].iloc[idx]])
+                if self.timestep_mapping != {}:
+                    self.timesteps_final.append(self.timestep_mapping[self.df['year'].iloc[idx]])
                 else:
-                    self.years_final.append(self.df['year'].iloc[idx])
+                    self.timesteps_final.append(self.df['year'].iloc[idx])
             else:
                 final_df_mask.append(False)
         self.df = self.df[final_df_mask]
@@ -243,38 +215,37 @@ class DTMCreator:
         outmult = open(os.path.join(self.model_root, "model-mult.dat"), 'w+')
         outyear = open(os.path.join(self.model_root, "model-year.dat"), 'w+')
         outseq = open(os.path.join(self.model_root, "model-seq.dat"), 'w+')
-        # outdocids = open(os.path.join(self.model_root, "model-docids.dat"), "w+")
-        year_dict = {}
+
         ordered_doc_ids = []
-        print(len(self.years_final))
+        print(len(self.timesteps_final))
         print(len(self.paras_to_wordcounts))
 
-        yearcount = defaultdict(lambda:0)
+        stepcount = defaultdict(lambda:0)
 
-        if self.years_per_step == 1:
+        if self.timestep_mapping == {}:
             min_date = min_year if min_year else min(self.df['year'])
             max_date = max_year if max_year else max(self.df['year'])
+            timestep_iterator = range(min_date, max_date + 1, 1)
         else:
-            min_date = min(self.year_mapping.values())
-            max_date = max(self.year_mapping.values())
-        iterator = year_iterator if year_iterator else range(min_date, max_date + 1, 1)
-        for year in iterator:
-            for idx, yy in enumerate(self.years_final):
-                if year ==yy:
-                    yearcount[year]+=1
+            with open(os.path.join(self.model_root,"timestep_mapping.json"), "w") as fp:
+                json.dump(self.timestep_mapping, fp)
+            timestep_iterator = sorted(list(set(self.timestep_mapping.values())))
+        for step in timestep_iterator:
+            for idx, yy in enumerate(self.timesteps_final):
+                if step == yy:
+                    stepcount[step] += 1
                     outyear.write(f"{str(yy)}\n")
                     outmult.write(f"{self.paras_to_wordcounts[idx]}\n")
                     ordered_doc_ids.append(idx)
-                    # outdocids.write(f"{str(self.doc_id_order[idx])}\n")
 
-        outseq.write(f"{len(yearcount)}\n")
-        for year in sorted(yearcount.keys()):
-            outseq.write(f"{yearcount[year]}\n")
-            year_dict[len(year_dict)]=year
+        outseq.write(f"{len(stepcount)}\n")
+
+        timestep_dict = {}
+        for step in sorted(timestep_iterator):
+            outseq.write(f"{stepcount[step]}\n")
+            timestep_dict[len(timestep_dict)] = step
         self.df = self.df.iloc[ordered_doc_ids]
         self.df.to_pickle(os.path.join(self.model_root, "ordered_dtm.pickle"))
-        if write_csv:
-            self.df.to_csv(os.path.join(self.model_root, "preproc_corpus.csv"), index=False)
 
         outyear.close()
         outmult.close()
