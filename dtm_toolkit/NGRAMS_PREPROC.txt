@@ -12443,3 +12443,62 @@ zoological garden
 övre norrland
 šiauliai county
 žilina region
+petrol
+shale gas
+ccs
+capture storage
+methane
+pv
+hydro
+fusion power
+electricity
+crude oil
+nuclear industry
+hydroelectric power
+ethanol
+carbon capture
+politic policy politician
+petroleum
+climate change
+offshore wind
+coal seam gas
+hydro storage
+oil industry
+biodiesel
+nuclear plant
+wave power
+solar
+hydroelectric development
+biomass
+coal
+photovoltaic
+wind farm
+oil gas
+oil drilling
+biofuel
+hydro electric power station
+pump hydro
+hydro electric power plant
+wave energy
+capture sequestration
+wind turbine
+oil exploration
+hydroelectricity
+carbon capture storage
+nuclear reactor
+fusion
+agriculture farmer
+nuclear fuel
+offshore turbine
+natural gas
+wind power
+solar power
+global warming
+solar panel
+ccus
+unconventional gas
+carbon dioxide capture
+wind speed
+wind energy
+nuclear power
+carbon capture sequestration
